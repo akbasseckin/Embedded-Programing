@@ -1,3 +1,4 @@
+//--------------------------------------------------------------------
 const int p_meter = 32;
 const int Red = 21;
 const int Green = 22;
@@ -9,9 +10,9 @@ const int endSOS = 34;
 int startButtonState = 0;
 int endButtonState = 0;
 
-bool sosActive = false;
+bool sosActive = false; //sos state
 
-const char* sosChar = "...---...";
+const char* sosChar = "...---...";  // sos array char* pointer to memory address
 const int sosLength = 9;
 
 const unsigned long dotDuration = 500;
@@ -19,12 +20,14 @@ const unsigned long dashDuration = dotDuration * 2;
 const unsigned long symbolGap = dotDuration;
 const unsigned long letterGap = dotDuration * 2;
 
-// --- SOS state machine variables ---
-enum SosPhase { SIGNAL_ON, SIGNAL_OFF };
-SosPhase sosPhase = SIGNAL_ON;
-int sosIndex = 0;
-unsigned long sosPhaseStart = 0;
+// --- Array to hold the ON duration for each symbol (built in setup) ---
+unsigned long sosDurations[sosLength];
 
+// --- SOS state machine variables (no enum, just a bool) ---
+bool sosOn = true;   //if true = ON phase, if false = OFF/gap phase
+int sosIndex = 0; 
+unsigned long sosPhaseStart = 0;
+//--------------------------------------------------------------------
 void setup() {
   Serial.begin(115200);
 
@@ -34,8 +37,17 @@ void setup() {
 
   pinMode(startSOS, INPUT);
   pinMode(endSOS, INPUT);
-}
 
+  //for loop to convert the sosChar string into an integer duration array
+  for (int i = 0; i < sosLength; i++) {
+    if (sosChar[i] == '.') {
+      sosDurations[i] = dotDuration;
+    } else {
+      sosDurations[i] = dashDuration;
+    }
+  }
+}
+//--------------------------------------------------------------------
 void loop() {
   startButtonState = digitalRead(startSOS);
   endButtonState = digitalRead(endSOS);
@@ -43,7 +55,7 @@ void loop() {
   if (startButtonState == HIGH && !sosActive) {
     sosActive = true;
     sosIndex = 0;
-    sosPhase = SIGNAL_ON;
+    sosOn = true;
     sosPhaseStart = millis();
     allOff();
   }
@@ -53,8 +65,8 @@ void loop() {
   }
 
   sensorValue = analogRead(p_meter);
-  //Serial.print("The sensor value is: ");
-  //Serial.println(sensorValue);
+  Serial.print("The sensor value is: ");
+  Serial.println(sensorValue);
 
   if (sosActive) {
     updateSOS();
@@ -62,8 +74,8 @@ void loop() {
     setColorFromSensor();
   }
 }//end loop
-
-void setColorFromSensor() {
+//--------------------------------------------------------------------
+void setColorFromSensor() { //sends arguments to control_LEDs function
   if (sensorValue <= 1000) {
     control_LEDs (LOW, LOW, HIGH);
   } else if (sensorValue <= 2500) {
@@ -72,33 +84,31 @@ void setColorFromSensor() {
     control_LEDs (HIGH, LOW, LOW);
   }
 }
-void control_LEDs (bool R, bool G, bool B) {
+void control_LEDs (bool R, bool G, bool B) { //turns on/off the LEDs
   digitalWrite(Red, R);
   digitalWrite(Green, G);
   digitalWrite(Blue, B);
 }
-
-void allOff() {
+//--------------------------------------------------------------------
+void allOff() { //shuts off all LEDs
   digitalWrite(Red, LOW);
   digitalWrite(Green, LOW);
   digitalWrite(Blue, LOW);
 }
-
+//--------------------------------------------------------------------
 void updateSOS() {
   unsigned long now = millis();
-  char symbol = sosChar[sosIndex];
 
-  if (sosPhase == SIGNAL_ON) {
-    setColorFromSensor(); // color follows pot live, even mid-signal
-    unsigned long onTime = (symbol == '.') ? dotDuration : dashDuration;
+  if (sosOn) {
+    setColorFromSensor(); // color tracks potentiometer
 
-    if (now - sosPhaseStart >= onTime) {
+    if (now - sosPhaseStart >= sosDurations[sosIndex]) {
       allOff();
-      sosPhase = SIGNAL_OFF;
+      sosOn = false;
       sosPhaseStart = now;
     }
 
-  } else { // SIGNAL_OFF
+  } else { // OFF/gap phase
     unsigned long offTime = symbolGap;
     if (sosIndex == 8) {
       offTime += letterGap; // extra pause between each SOS sequence
@@ -107,9 +117,9 @@ void updateSOS() {
     if (now - sosPhaseStart >= offTime) {
       sosIndex++;
       if (sosIndex >= sosLength) {
-        sosIndex = 0; // loop the SOS pattern; remove this line to run once
+        sosIndex = 0; // setting the index to 0 so after the last character it starts again
       }
-      sosPhase = SIGNAL_ON;
+      sosOn = true;
       sosPhaseStart = now;
     }
   }
